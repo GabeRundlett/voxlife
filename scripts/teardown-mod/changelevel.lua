@@ -150,7 +150,7 @@ local function DebugChangeLevelTrigger(trigger)
 end
 
 function init()
-    SpawnLevel("c1a0")
+    SpawnLevel("c4a1")
     globals.needs_tp = true
     globals.last_changelevel_time = GetTime()
     globals.level_load_trigger = nil

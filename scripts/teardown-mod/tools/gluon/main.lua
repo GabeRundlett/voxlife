@@ -13,7 +13,7 @@ local function Reflect(I, N)
 	return VecSub(I, VecScale(N, 2 * VecDot(N, I)))
 end
 
-local function DrawTauLaser(laserPoints)
+local function DrawGluonLaser(laserPoints)
 	local laserSprite = LoadSprite("gfx/laser.png")
 
 	local col = Vec(1, 0.75, 0.3)
@@ -33,12 +33,12 @@ local function DrawTauLaser(laserPoints)
 	end
 end
 
-tau = {}
+gluon = {}
 
-function tau:init()
+function gluon:init()
 	-- code
-	RegisterTool("vl_tau", "Tau Cannon", "MOD/tools/tau/prefab.xml", 4)
-	SetBool("game.tool.vl_tau.enabled", true)
+	RegisterTool("vl_gluon", "Gluon Gun", "MOD/tools/gluon/prefab.xml", 4)
+	SetBool("game.tool.vl_gluon.enabled", true)
 	self.angle = 0
 	self.angVel = 0
 	self.coolDown = 0
@@ -49,19 +49,19 @@ function tau:init()
 	self.shootSnd2 = {}
 	self.playSecondarySound = 0
 	for i=1, 1 do
-		self.shootSnd[i] = LoadSound("MOD/tools/tau/shot"..i..".ogg")
+		self.shootSnd[i] = LoadSound("MOD/tools/gluon/shot"..i..".ogg")
 	end
 	for i=1, 3 do
-		self.shootSnd2[i] = LoadSound("MOD/tools/tau/electro"..i..".ogg")
+		self.shootSnd2[i] = LoadSound("MOD/tools/gluon/electro"..i..".ogg")
 	end
 	self.oldPipePos = Vec()
 	self.particleTimer = 0
 	self.shape = 1
 	self.toolAnimator = ToolAnimator()
-	SetInt("game.tool.vl_tau.ammo", 1800)
+	SetInt("game.tool.vl_gluon.ammo", 1800)
 end
 
-function tau:tick(dt)
+function gluon:tick(dt)
 	if self.playSecondarySound > 0 then
 		self.playSecondarySound = self.playSecondarySound - dt
 		if self.playSecondarySound <= 0 then
@@ -69,10 +69,10 @@ function tau:tick(dt)
 		end
 	end
 
-	if GetString("game.player.tool") == "vl_tau" then
+	if GetString("game.player.tool") == "vl_gluon" then
 		local ct = GetCameraTransform()
 
-		if GetBool("game.player.canusetool") and InputDown("usetool") and GetInt("game.tool.vl_tau.ammo") > 0 then
+		if GetBool("game.player.canusetool") and InputDown("usetool") and GetInt("game.tool.vl_gluon.ammo") > 0 then
 			if self.coolDown < 0 then
 				local distance = 1000
 
@@ -141,7 +141,7 @@ function tau:tick(dt)
 				self.smoke = math.min(1.0, self.smoke + 0.2)
 				self.coolDown = 0.25
 				self.particleTimer = -0.5
-				SetInt("game.tool.vl_tau.ammo", GetInt("game.tool.vl_tau.ammo")-1)
+				SetInt("game.tool.vl_gluon.ammo", GetInt("game.tool.vl_gluon.ammo")-1)
 
 				self.laser = 0.05
 			end
@@ -164,7 +164,7 @@ function tau:tick(dt)
 		end
 
 		if self.laser > 0 then
-			DrawTauLaser(self.laserPoints)
+			DrawGluonLaser(self.laserPoints)
 		end
 
 
@@ -218,8 +218,10 @@ function tau:tick(dt)
 	self.laser = math.max(0.0, self.laser - dt)
 end
 
-function tau:draw(dt)
-	if GetString("game.player.tool") == "vl_tau" then
+function gluon:draw(dt)
+	if GetString("game.player.tool") == "vl_gluon" then
 		cross = UiPixelToWorld(UiCenter(), UiMiddle())
 	end
 end
+
+return gluon

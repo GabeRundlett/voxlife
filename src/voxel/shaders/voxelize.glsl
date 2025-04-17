@@ -59,21 +59,21 @@ void main() {
     }
 
     switch (side) {
-        case 0:
-            verts[0].pos = verts[0].pos.zyx;
-            verts[1].pos = verts[1].pos.zyx;
-            verts[2].pos = verts[2].pos.zyx;
-            break;
-        case 1:
-            verts[0].pos = verts[0].pos.xzy;
-            verts[1].pos = verts[1].pos.xzy;
-            verts[2].pos = verts[2].pos.xzy;
-            break;
-        case 2:
-            verts[0].pos = verts[0].pos.xyz;
-            verts[1].pos = verts[1].pos.xyz;
-            verts[2].pos = verts[2].pos.xyz;
-            break;
+    case 0:
+        verts[0].pos = verts[0].pos.zyx;
+        verts[1].pos = verts[1].pos.zyx;
+        verts[2].pos = verts[2].pos.zyx;
+        break;
+    case 1:
+        verts[0].pos = verts[0].pos.xzy;
+        verts[1].pos = verts[1].pos.xzy;
+        verts[2].pos = verts[2].pos.xzy;
+        break;
+    case 2:
+        verts[0].pos = verts[0].pos.xyz;
+        verts[1].pos = verts[1].pos.xyz;
+        verts[2].pos = verts[2].pos.xyz;
+        break;
     }
 
     verts[0].flags = side;
@@ -132,6 +132,8 @@ void main() {
 
 #elif DAXA_SHADER_STAGE == DAXA_SHADER_STAGE_FRAGMENT
 
+#extension GL_EXT_shader_atomic_int64 : require
+
 #include "common.glsl"
 
 layout(location = 0) in daxa_f32vec2 v_uv;
@@ -151,15 +153,31 @@ void main() {
     vec3 p = gl_FragCoord.xyz;
     p.z = p.z * 256;
     switch (v_rotation) {
-        case 0: p = p.zyx; break;
-        case 1: p = p.xzy; break;
-        case 2: break;
+    case 0: p = p.zyx; break;
+    case 1: p = p.xzy; break;
+    case 2: break;
     }
 
-    uvec3 vp = clamp(uvec3(floor(p)), uvec3(0), uvec3(volume_extent - 1));
-    uint o_index = vp.x + vp.y * volume_extent.x + vp.z * volume_extent.x * volume_extent.y;
+    uvec3 local_grid_pos = uvec3(deref(manifest_ptr).aabb_min - push.total_aabb_min);
 
-    atomicExchange(deref_i(deref(manifest_ptr).voxels, o_index).color, pack_color(tex_col));
+    uvec3 local_vp = clamp(uvec3(floor(p)), uvec3(0), uvec3(volume_extent - 1));
+    uint o_index = local_vp.x + local_vp.y * volume_extent.x + local_vp.z * volume_extent.x * volume_extent.y;
+
+    vec3 total_diff = push.total_aabb_max - push.total_aabb_min;
+    uvec3 total_brick_volume_extent = uvec3(floor(total_diff)) / 4;
+
+    uvec3 world_vp = local_grid_pos + local_vp;
+    uvec3 brick_pos = world_vp / 4;
+    uvec3 in_brick_pos = world_vp % 4;
+    uint brick_index = (brick_pos.x + brick_pos.y * total_brick_volume_extent.x + brick_pos.z * total_brick_volume_extent.x * total_brick_volume_extent.y);
+
+    uint in_brick_index = in_brick_pos.x + in_brick_pos.y * 4 + in_brick_pos.z * 4 * 4;
+    uint64_t new_bitmask = uint64_t(1) << in_brick_index;
+    uint64_t old_bitmask = atomicOr(deref_i(push.voxel_bitmask, brick_index).bits, new_bitmask);
+
+    if ((new_bitmask & old_bitmask) == 0) {
+        atomicExchange(deref_i(deref(manifest_ptr).voxels, o_index).color, pack_color(tex_col));
+    }
 }
 
 #endif

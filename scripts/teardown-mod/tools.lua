@@ -1,13 +1,17 @@
--- This script will run on all levels when mod is active.
--- Modding documentation: http://teardowngame.com/modding
--- API reference: http://teardowngame.com/modding/api.html
+-- #include "scripts/libraries/Automatic.lua"
+-- #include "scripts/libraries/LnL.lua"
 
-#include "tools/glock/main.lua"
-#include "tools/revolver/main.lua"
-#include "tools/tau/main.lua"
-#include "tools/old.lua"
+-- #include "tools/glock/main.lua"
+-- #include "tools/revolver/main.lua"
+-- #include "tools/tau/main.lua"
+-- #include "tools/old.lua"
 
-local tools = {
+old, old_env = Loader.File("tools/old.lua")
+glock, glock_env = Loader.File("tools/glock/main.lua")
+revolver, revolver_env = Loader.File("tools/revolver/main.lua")
+tau, tau_env = Loader.File("tools/tau/main.lua")
+
+tools = {
     old,
     glock,
     revolver,
@@ -24,9 +28,6 @@ function tick(dt)
     for i = 1, #tools do
         tools[i]:tick(dt)
     end
-end
-
-function update(dt)
 end
 
 function draw(dt)

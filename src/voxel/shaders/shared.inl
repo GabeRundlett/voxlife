@@ -3,6 +3,11 @@
 #include <daxa/daxa.inl>
 #include <daxa/utils/task_graph.inl>
 
+struct BitmapNode4x4x4 {
+    uint64_t bits;
+};
+DAXA_DECL_BUFFER_PTR(BitmapNode4x4x4)
+
 struct MyVertex {
     daxa_f32vec3 pos;
     daxa_f32vec2 uv;
@@ -17,7 +22,7 @@ struct GpuVoxel {
 };
 DAXA_DECL_BUFFER_PTR(GpuVoxel)
 struct GpuModelManifest {
-    daxa_BufferPtr(GpuVoxel) voxels;
+    daxa_RWBufferPtr(GpuVoxel) voxels;
     daxa_f32vec3 aabb_min;
     daxa_f32vec3 aabb_max;
 };
@@ -66,5 +71,8 @@ struct VoxelizeDrawPush {
     daxa_BufferPtr(GpuModelManifest) model_manifests;
     daxa_BufferPtr(MyVertex) vertices;
     daxa_BufferPtr(MyVertex) processed_vertices;
+    daxa_RWBufferPtr(BitmapNode4x4x4) voxel_bitmask;
+    daxa_f32vec3 total_aabb_min;
+    daxa_f32vec3 total_aabb_max;
     daxa_u32 triangle_count;
 };

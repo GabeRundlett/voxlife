@@ -178,3 +178,5 @@ end
 
 function old:draw(dt)
 end
+
+return old

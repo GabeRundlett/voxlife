@@ -50,10 +50,6 @@ void upload_vector_task(daxa::TaskGraph &tg, daxa::TaskBufferView task_buffer, s
     });
 }
 
-void upload_frame_constants_task(daxa::TaskGraph &tg, daxa::TaskBufferView frame_constants, FrameConstants *data) {
-}
-
-
 struct TextureManifest {
     daxa::ImageId image;
 };
@@ -93,6 +89,7 @@ struct VoxelizeApp : Application {
 
     daxa::TaskBuffer task_vertex_buffer;
     daxa::TaskImage task_textures;
+    daxa::TaskBuffer task_bitmask;
     daxa::TaskBuffer task_model_manifests;
     daxa::TaskBuffer task_cube_indices;
     daxa::TaskBuffer task_frame_constants;
@@ -105,6 +102,9 @@ struct VoxelizeApp : Application {
 
     daxa::SamplerId sampler_llr;
     daxa::SamplerId sampler_nnr;
+
+    glm::vec3 total_aabb_min{};
+    glm::vec3 total_aabb_max{};
 
     FrameConstants frame_constants;
     std::vector<MyVertex> vertices;
@@ -160,13 +160,14 @@ void init_bsp_data(VoxelizeApp *self, voxlife::bsp::bsp_handle bsp_handle) {
     self->texture_manifests.clear();
     self->model_manifests.clear();
 
-    bool aabb_set = false;
     uint32_t model_id = 0;
 
     auto to_voxel_space = [](glm::vec3 v) {
         return glm::vec3(v.x, v.y, v.z) * (0.0254f / 0.1f);
     };
 
+    self->total_aabb_min = glm::vec3(+std::numeric_limits<float>::max());
+    self->total_aabb_max = glm::vec3(-std::numeric_limits<float>::max());
     for (auto &face : faces) {
         auto texture_name = voxlife::bsp::get_texture_name(bsp_handle, face.texture_id);
         auto texture = voxlife::bsp::get_texture_data(bsp_handle, face.texture_id);
@@ -174,12 +175,14 @@ void init_bsp_data(VoxelizeApp *self, voxlife::bsp::bsp_handle bsp_handle) {
         if (texture_name == "SKY" || texture_name == "sky")
             continue;
 
-        glm::vec3 face_aabb_min = glm::floor(to_voxel_space(face.vertices[0]));
-        glm::vec3 face_aabb_max = glm::floor(to_voxel_space(face.vertices[0]) + 1.0f);
+        glm::vec3 face_aabb_min = glm::vec3(+std::numeric_limits<float>::max());
+        glm::vec3 face_aabb_max = glm::vec3(-std::numeric_limits<float>::max());
         for (auto const &v : face.vertices) {
             face_aabb_min = glm::min(face_aabb_min, glm::floor(to_voxel_space(v)));
             face_aabb_max = glm::max(face_aabb_max, glm::floor(to_voxel_space(v) + 1.0f));
         }
+        self->total_aabb_min = glm::min(face_aabb_min, self->total_aabb_min);
+        self->total_aabb_max = glm::max(face_aabb_max, self->total_aabb_max);
 
         if (self->model_manifests.empty()) {
             CpuModelManifest model;
@@ -261,6 +264,16 @@ void init_bsp_data(VoxelizeApp *self, voxlife::bsp::bsp_handle bsp_handle) {
         }
     }
     self->model_manifests.back().finalize(self->device);
+
+    auto volume_extent = self->total_aabb_max - self->total_aabb_min;
+    auto bitmask_buffer_id = self->device.create_buffer({
+        .size = uint64_t(volume_extent.x + 3) * uint64_t(volume_extent.y + 3) * uint64_t(volume_extent.z + 3) / 8,
+        .name = "bitmask",
+    });
+    self->task_bitmask = daxa::TaskBuffer({
+        .initial_buffers = {.buffers = std::span{&bitmask_buffer_id, 1}},
+        .name = "task bitmask",
+    });
 
     auto model_manifests_buffer_id = self->device.create_buffer({
         .size = sizeof(GpuModelManifest) * self->model_manifests.size(),
@@ -501,6 +514,7 @@ void record_frame(VoxelizeApp *self) {
         .name = "loop",
     });
 
+    task_graph.use_persistent_buffer(self->task_bitmask);
     task_graph.use_persistent_buffer(self->task_vertex_buffer);
     task_graph.use_persistent_image(self->task_textures);
     task_graph.use_persistent_buffer(self->task_model_manifests);
@@ -537,6 +551,18 @@ void record_frame(VoxelizeApp *self) {
         .name = "upload frame constants",
     });
 
+    task_graph.add_task({
+        .attachments = {
+            daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_WRITE, self->task_bitmask),
+        },
+        .task = [=](daxa::TaskInterface ti) {
+            auto buffer = self->task_bitmask.get_state().buffers[0];
+            auto buffer_size = ti.device.buffer_info(buffer).value().size;
+            ti.recorder.clear_buffer({.buffer = buffer, .size = buffer_size});
+        },
+        .name = "clear voxel bitmask",
+    });
+
     auto task_processed_vertex_buffer = task_graph.create_transient_buffer({
         .size = uint32_t(self->vertices.size() * sizeof(MyVertex)),
         .name = "processed vertices",
@@ -548,6 +574,7 @@ void record_frame(VoxelizeApp *self) {
             daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, self->task_vertex_buffer),
             daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, self->task_model_manifests),
             daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_WRITE, task_processed_vertex_buffer),
+            // daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, self->task_bitmask),
         },
         .task = [=](daxa::TaskInterface ti) {
             ti.recorder.set_pipeline(*self->voxelize_preprocess_pipe);
@@ -556,6 +583,9 @@ void record_frame(VoxelizeApp *self) {
                 .model_manifests = ti.device.buffer_device_address(ti.get(self->task_model_manifests.view()).ids[0]).value(),
                 .vertices = ti.device.buffer_device_address(ti.get(self->task_vertex_buffer.view()).ids[0]).value(),
                 .processed_vertices = ti.device.buffer_device_address(ti.get(task_processed_vertex_buffer).ids[0]).value(),
+                // .voxel_bitmask = ti.device.buffer_device_address(ti.get(self->task_bitmask.view()).ids[0]).value(),
+                // .total_aabb_min = std::bit_cast<daxa_f32vec3>(self->total_aabb_min),
+                // .total_aabb_max = std::bit_cast<daxa_f32vec3>(self->total_aabb_max),
                 .triangle_count = uint32_t(self->vertices.size() / 3),
             });
             ti.recorder.dispatch({uint32_t(self->vertices.size() / 3 + 127) / 128, 1, 1});
@@ -583,6 +613,7 @@ void record_frame(VoxelizeApp *self) {
             daxa::inl_attachment(daxa::TaskBufferAccess::GRAPHICS_SHADER_READ, task_processed_vertex_buffer),
             daxa::inl_attachment(daxa::TaskBufferAccess::GRAPHICS_SHADER_READ_WRITE, self->task_model_voxels),
             daxa::inl_attachment(daxa::TaskImageAccess::FRAGMENT_SHADER_SAMPLED, self->task_textures),
+            daxa::inl_attachment(daxa::TaskBufferAccess::FRAGMENT_SHADER_READ_WRITE, self->task_bitmask),
         },
         .task = [=](daxa::TaskInterface ti) {
             daxa::RenderCommandRecorder render_recorder = std::move(ti.recorder).begin_renderpass({
@@ -593,6 +624,9 @@ void record_frame(VoxelizeApp *self) {
                 .frame_constants = ti.device.buffer_device_address(ti.get(self->task_frame_constants.view()).ids[0]).value(),
                 .model_manifests = ti.device.buffer_device_address(ti.get(self->task_model_manifests.view()).ids[0]).value(),
                 .processed_vertices = ti.device.buffer_device_address(ti.get(task_processed_vertex_buffer).ids[0]).value(),
+                .voxel_bitmask = ti.device.buffer_device_address(ti.get(self->task_bitmask.view()).ids[0]).value(),
+                .total_aabb_min = std::bit_cast<daxa_f32vec3>(self->total_aabb_min),
+                .total_aabb_max = std::bit_cast<daxa_f32vec3>(self->total_aabb_max),
                 .triangle_count = uint32_t(self->vertices.size() / 3),
             });
             render_recorder.draw({.vertex_count = uint32_t(self->vertices.size())});

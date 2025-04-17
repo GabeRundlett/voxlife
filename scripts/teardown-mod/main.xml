@@ -1,4 +1,7 @@
 <scene version="1.6.2" shadowVolume="256 256 256">
 	<script file="MOD/changelevel.lua"/>
-	<script file="MOD/tools.lua"/>
+	<instance pos="0.415 0.115 0.0" rot="0.0 0.0 0.0" file="MOD/tools/tau/prefab.xml"/>
+	<instance pos="-0.245 0.0 0.0" rot="0.0 0.0 0.0" file="MOD/tools/glock/prefab.xml"/>
+	<instance pos="0.0 0.0 0.0" rot="0.0 0.0 0.0" file="MOD/tools/revolver/prefab.xml"/>
 </scene>
+

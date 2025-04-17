@@ -218,7 +218,7 @@ namespace voxlife::hl1 {
             }
         }
 
-        // test_voxelization_gui(bsp_handle);
+        // voxelization_gui(bsp_handle);
 
         if (true) {
             std::vector<Model> models;

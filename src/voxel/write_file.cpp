@@ -411,7 +411,7 @@ void write_teardown_level(const LevelInfo &info) {
 
     for (auto const &light : info.lights) {
         xml_str += std::format(
-            R"(<light tags="{}" pos="{:.3f} {:.3f} {:.3f}" color="{} {} {}" scale="{}"/>)"
+            R"(<light tags="{}" pos="{:.3f} {:.3f} {:.3f}" color="{} {} {}" scale="{}" fogscale="0"/>)"
             "\n",
             info.name,
             light.pos.x, light.pos.y, light.pos.z,
